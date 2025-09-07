@@ -1,0 +1,57 @@
+{
+  "name": "playwright-enhanced-reporter",
+  "version": "1.0.0",
+  "description": "A comprehensive, feature-rich HTML reporter for Playwright with analytics, charts, and BDD-style UI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "publish:npm": "npm run build && npm publish",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "playwright",
+    "reporter",
+    "html",
+    "test-report",
+    "analytics",
+    "charts",
+    "allure-style",
+    "testing",
+    "automation",
+    "bdd",
+    "dashboard",
+    "metrics"
+  ],
+  "author": "Keerthivasan RC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KVN0907/playwright-enhanced-reporter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KVN0907/playwright-enhanced-reporter/issues"
+  },
+  "homepage": "https://github.com/KVN0907/playwright-enhanced-reporter#readme",
+  "peerDependencies": {
+    "@playwright/test": "^1.30.0"
+  },
+  "dependencies": {
+    "fs-extra": "^11.1.1"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.1",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
