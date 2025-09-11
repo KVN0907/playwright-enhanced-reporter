@@ -52,3 +52,5 @@ coverage/
 # Temporary folders
 tmp/
 temp/
+
+test-results/
