@@ -21,6 +21,13 @@ export interface TestMetrics {
   epicMetrics: Record<string, { total: number; passed: number; failed: number }>;
 }
 
+export interface TestAttachment {
+  name: string;
+  contentType: string;
+  path?: string;
+  body?: Buffer;
+}
+
 export interface TestResultDetail {
   test: string;
   status: string;
@@ -28,7 +35,10 @@ export interface TestResultDetail {
   browser: string;
   specFile: string;
   retry: number;
+  isFlaky?: boolean;
   error?: string;
+  errorStack?: string;
+  attachments?: TestAttachment[];
   allureProperties?: {
     severity?: string;
     feature?: string;

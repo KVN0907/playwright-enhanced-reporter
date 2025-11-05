@@ -1,7 +1,7 @@
 {
   "name": "playwright-enhanced-reporter",
-  "version": "1.0.3",
-  "description": "A comprehensive, feature-rich HTML reporter for Playwright with analytics, charts, and BDD-style UI",
+  "version": "2.0.0",
+  "description": "A comprehensive, enterprise-grade HTML reporter for Playwright with advanced analytics, trends, filtering, pagination, and export capabilities",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

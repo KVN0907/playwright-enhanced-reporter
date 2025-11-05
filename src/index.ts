@@ -4,7 +4,7 @@ import * as path from 'path';
 import { TestMetrics, TestResultDetail, EnhancedReporterOptions } from './types';
 import { EnhancedHTMLGenerator } from './html-generator';
 
-export { TestMetrics, TestResultDetail, EnhancedReporterOptions } from './types';
+export { TestMetrics, TestResultDetail, TestAttachment, EnhancedReporterOptions } from './types';
 export { EnhancedHTMLGenerator } from './html-generator';
 
 export default class EnhancedReporter implements Reporter {
@@ -59,10 +59,17 @@ export default class EnhancedReporter implements Reporter {
     
     const allureProperties = this.extractAllureProperties(test);
     
+    // Check if test is flaky (passed after retries)
+    const isFlaky = result.retry > 0 && result.status === 'passed';
+    
     if (result.status === 'passed') {
       this.metrics.passed++;
       this.metrics.browserMetrics[browserName].passed++;
       this.updateAllureMetrics(allureProperties, 'passed');
+      
+      if (isFlaky) {
+        this.metrics.flaky++;
+      }
     } else if (result.status === 'failed') {
       this.metrics.failed++;
       this.metrics.browserMetrics[browserName].failed++;
@@ -89,6 +96,9 @@ export default class EnhancedReporter implements Reporter {
       this.metrics.fastestTest = { name: test.title, duration: result.duration };
     }
     
+    // Extract attachments (screenshots, videos, traces, etc.)
+    const attachments = this.extractAttachments(result);
+    
     this.testResults.push({
       test: test.title,
       status: result.status,
@@ -96,7 +106,10 @@ export default class EnhancedReporter implements Reporter {
       browser: browserName,
       specFile: this.extractSpecFilePath(test),
       retry: result.retry,
+      isFlaky,
       error: result.error?.message,
+      errorStack: result.error?.stack,
+      attachments,
       allureProperties
     });
   }
@@ -104,7 +117,7 @@ export default class EnhancedReporter implements Reporter {
   private extractAllureProperties(test: TestCase): { severity?: string; feature?: string; epic?: string } {
     const properties: { severity?: string; feature?: string; epic?: string } = {};
     
-    test.annotations?.forEach(annotation => {
+    test.annotations?.forEach((annotation: { type: string; description?: string }) => {
       switch (annotation.type) {
         case 'severity':
           properties.severity = annotation.description || 'normal';
@@ -197,6 +210,23 @@ export default class EnhancedReporter implements Reporter {
     return 'Unknown';
   }
 
+  private extractAttachments(result: TestResult): any[] {
+    const attachments: any[] = [];
+    
+    if (result.attachments && result.attachments.length > 0) {
+      for (const attachment of result.attachments) {
+        attachments.push({
+          name: attachment.name,
+          contentType: attachment.contentType,
+          path: attachment.path,
+          body: attachment.body
+        });
+      }
+    }
+    
+    return attachments;
+  }
+
   async onEnd(result: FullResult) {
     this.metrics.endTime = new Date();
     
@@ -214,6 +244,9 @@ export default class EnhancedReporter implements Reporter {
     console.log(`   ✅ Passed: ${this.metrics.passed} (${this.metrics.passRate.toFixed(1)}%)`);
     console.log(`   ❌ Failed: ${this.metrics.failed} (${this.metrics.failRate.toFixed(1)}%)`);
     console.log(`   ⏭️  Skipped: ${this.metrics.skipped}`);
+    if (this.metrics.flaky > 0) {
+      console.log(`   ⚠️  Flaky: ${this.metrics.flaky} (passed after retry)`);
+    }
     console.log(`   ⏱️  Total Duration: ${(this.metrics.duration / 1000).toFixed(2)}s`);
     console.log(`   📈 Average Duration: ${this.metrics.avgDuration.toFixed(0)}ms`);
 
@@ -264,15 +297,92 @@ export default class EnhancedReporter implements Reporter {
   }
 
   private async generateEnhancedHTMLReport() {
+    // Save attachments to disk
+    await this.saveAttachments();
+    
+    // Load trends data if available
+    const trendsData = await this.loadTrendsData();
+    
     const htmlContent = EnhancedHTMLGenerator.generateHTML(this.metrics, this.testResults, {
       title: this.options.title,
       includeCharts: this.options.includeCharts,
-      theme: this.options.theme
+      theme: this.options.theme,
+      trendsData
     });
     
     const reportPath = path.join(this.options.outputDir, this.options.outputFile);
     await fs.writeFile(reportPath, htmlContent);
     console.log(`📄 Enhanced HTML report saved to: ${reportPath}`);
+  }
+
+  private async loadTrendsData(): Promise<any[]> {
+    try {
+      const trendsPath = path.join(this.options.outputDir, 'trends.json');
+      if (await fs.pathExists(trendsPath)) {
+        return await fs.readJSON(trendsPath);
+      }
+    } catch (error) {
+      console.log('⚠️ Could not load trends data');
+    }
+    return [];
+  }
+
+  private async saveAttachments() {
+    const attachmentsDir = path.join(this.options.outputDir, 'attachments');
+    await fs.ensureDir(attachmentsDir);
+    
+    for (const result of this.testResults) {
+      if (result.attachments && result.attachments.length > 0) {
+        for (let i = 0; i < result.attachments.length; i++) {
+          const attachment = result.attachments[i];
+          
+          // Generate safe filename
+          const testNameSafe = result.test.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+          const timestamp = Date.now();
+          const extension = this.getFileExtension(attachment.contentType, attachment.name);
+          const filename = `${testNameSafe}_${i}_${timestamp}${extension}`;
+          const filePath = path.join(attachmentsDir, filename);
+          
+          try {
+            if (attachment.path) {
+              // Copy from existing path
+              await fs.copy(attachment.path, filePath);
+            } else if (attachment.body) {
+              // Write from buffer
+              await fs.writeFile(filePath, attachment.body);
+            }
+            
+            // Update attachment with relative path for HTML
+            attachment.path = `attachments/${filename}`;
+          } catch (error) {
+            console.warn(`⚠️ Failed to save attachment ${attachment.name}:`, error);
+          }
+        }
+      }
+    }
+  }
+
+  private getFileExtension(contentType: string, name: string): string {
+    // Check name first
+    if (name) {
+      const match = name.match(/\.[^.]+$/);
+      if (match) return match[0];
+    }
+    
+    // Fall back to content type
+    const typeMap: Record<string, string> = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'video/webm': '.webm',
+      'video/mp4': '.mp4',
+      'text/plain': '.txt',
+      'application/json': '.json',
+      'application/zip': '.zip'
+    };
+    
+    return typeMap[contentType] || '.dat';
   }
 
   private async generateTrendsReport() {

@@ -4,6 +4,7 @@ export interface HTMLGeneratorOptions {
   title?: string;
   includeCharts?: boolean;
   theme?: 'light' | 'dark' | 'auto';
+  trendsData?: any[];
 }
 
 export class EnhancedHTMLGenerator {
@@ -41,7 +42,8 @@ export class EnhancedHTMLGenerator {
     const {
       title = 'Enhanced Test Execution Report',
       includeCharts = true,
-      theme = 'auto'
+      theme = 'auto',
+      trendsData = []
     } = options;
 
     const passRate = metrics.passRate.toFixed(1);
@@ -69,6 +71,7 @@ export class EnhancedHTMLGenerator {
             <ul class="navbar-nav">
                 <li><a href="#overview" class="nav-link">Overview</a></li>
                 ${includeCharts ? '<li><a href="#charts" class="nav-link">Charts</a></li>' : ''}
+                ${trendsData.length > 0 ? '<li><a href="#trends" class="nav-link">Trends</a></li>' : ''}
                 <li><a href="#insights" class="nav-link">Insights</a></li>
                 <li><a href="#details" class="nav-link">Details</a></li>
             </ul>
@@ -82,11 +85,13 @@ export class EnhancedHTMLGenerator {
         ${this.generateOverviewSection(metrics, passRate, failRate, avgDuration)}
         ${this.generateMetricsSection(metrics, passRate, failRate, avgDuration)}
         ${includeCharts ? this.generateChartsSection(metrics) : ''}
+        ${trendsData.length > 0 ? this.generateTrendsSection(trendsData) : ''}
+        ${metrics.flaky > 0 ? this.generateFlakyTestsSection(testResults) : ''}
         ${this.generateDetailsSection(testResults)}
     </div>
 
     <script>
-        ${this.getJavaScript(metrics, includeCharts)}
+        ${this.getJavaScript(metrics, includeCharts, trendsData)}
     </script>
 </body>
 </html>`;
@@ -233,15 +238,112 @@ export class EnhancedHTMLGenerator {
                                 <div class="metric-value">${metrics.failed}</div>
                                 <div class="metric-subtitle">${failRate}% failure rate</div>
                             </div>
+                            <div class="metric-card flaky">
+                                <div class="metric-label">Flaky Tests</div>
+                                <div class="metric-value">${metrics.flaky}</div>
+                                <div class="metric-subtitle">Passed after retry</div>
+                            </div>
                             <div class="metric-card duration">
                                 <div class="metric-label">Total Duration</div>
                                 <div class="metric-value">${(metrics.duration / 1000).toFixed(1)}s</div>
                                 <div class="metric-subtitle">Avg: ${avgDuration}ms per test</div>
                             </div>
-                            <div class="metric-card rate">
-                                <div class="metric-label">Pass Rate</div>
-                                <div class="metric-value">${passRate}%</div>
-                                <div class="metric-subtitle">Target: ≥95%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+  }
+
+  private static generateFlakyTestsSection(testResults: TestResultDetail[]): string {
+    const flakyTests = testResults.filter(r => r.isFlaky);
+    
+    return `
+        <!-- Flaky Tests Row -->
+        <div class="row" id="insights">
+            <div class="col-md-12">
+                <div class="x_panel">
+                    <div class="x_title" onclick="togglePanel(this)">
+                        <h2><i class="fas fa-exclamation-triangle"></i> Flaky Tests Warning</h2>
+                        <ul class="panel_toolbox">
+                            <li><a class="collapse-link"><i class="fas fa-chevron-up"></i></a></li>
+                        </ul>
+                    </div>
+                    <div class="x_content">
+                        <div class="flaky-warning">
+                            <p><strong>⚠️ ${flakyTests.length} test(s) passed after retry.</strong> These tests may be unstable and require investigation.</p>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table flaky-table">
+                                <thead>
+                                    <tr>
+                                        <th>Test Name</th>
+                                        <th>Browser</th>
+                                        <th>Retry Count</th>
+                                        <th>Duration</th>
+                                        <th>Feature</th>
+                                        <th>Spec File</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${flakyTests.map(result => `
+                                        <tr class="flaky-row">
+                                            <td><strong>${result.test}</strong></td>
+                                            <td><i class="fas fa-globe"></i> ${result.browser}</td>
+                                            <td><span class="retry-badge-large"><i class="fas fa-redo"></i> ${result.retry}</span></td>
+                                            <td><i class="fas fa-clock"></i> ${result.duration}ms</td>
+                                            <td><i class="fas fa-tag"></i> ${result.allureProperties?.feature || 'Unknown'}</td>
+                                            <td><i class="fas fa-file-code"></i> ${result.specFile}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+  }
+
+  private static generateTrendsSection(trendsData: any[]): string {
+    return `
+        <!-- Trends Row -->
+        <div class="row" id="trends">
+            <div class="col-md-12">
+                <div class="x_panel">
+                    <div class="x_title" onclick="togglePanel(this)">
+                        <h2><i class="fas fa-chart-line"></i> Historical Trends (Last ${trendsData.length} Runs)</h2>
+                        <ul class="panel_toolbox">
+                            <li><a class="collapse-link"><i class="fas fa-chevron-up"></i></a></li>
+                        </ul>
+                    </div>
+                    <div class="x_content">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="trend-chart-container">
+                                    <h3>Pass Rate Trend</h3>
+                                    <canvas id="pass-rate-trend-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="trend-chart-container">
+                                    <h3>Test Count Trend</h3>
+                                    <canvas id="test-count-trend-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row" style="margin-top: 30px;">
+                            <div class="col-md-6">
+                                <div class="trend-chart-container">
+                                    <h3>Duration Trend</h3>
+                                    <canvas id="duration-trend-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="trend-chart-container">
+                                    <h3>Pass/Fail Trend</h3>
+                                    <canvas id="pass-fail-trend-chart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -301,6 +403,86 @@ export class EnhancedHTMLGenerator {
                         </ul>
                     </div>
                     <div class="x_content">
+                        <!-- Filters Section -->
+                        <div class="filters-container">
+                            <div class="filter-group">
+                                <label for="search-input"><i class="fas fa-search"></i> Search</label>
+                                <input type="text" id="search-input" placeholder="Search test names..." class="filter-input">
+                            </div>
+                            <div class="filter-group">
+                                <label for="status-filter"><i class="fas fa-filter"></i> Status</label>
+                                <select id="status-filter" class="filter-select">
+                                    <option value="">All</option>
+                                    <option value="passed">Passed</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="skipped">Skipped</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="browser-filter"><i class="fas fa-globe"></i> Browser</label>
+                                <select id="browser-filter" class="filter-select">
+                                    <option value="">All</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="severity-filter"><i class="fas fa-exclamation-triangle"></i> Severity</label>
+                                <select id="severity-filter" class="filter-select">
+                                    <option value="">All</option>
+                                    <option value="critical">Critical</option>
+                                    <option value="high">High</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="low">Low</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="feature-filter"><i class="fas fa-tag"></i> Feature</label>
+                                <select id="feature-filter" class="filter-select">
+                                    <option value="">All</option>
+                                </select>
+                            </div>
+                            <button id="clear-filters" class="clear-filters-btn"><i class="fas fa-times-circle"></i> Clear Filters</button>
+                        </div>
+                        <div class="results-summary">
+                            Showing <span id="visible-count">0</span> of <span id="total-count">0</span> tests
+                            <div class="export-buttons">
+                                <button id="export-csv" class="export-btn" title="Export to CSV">
+                                    <i class="fas fa-file-csv"></i> CSV
+                                </button>
+                                <button id="export-json" class="export-btn" title="Export to JSON">
+                                    <i class="fas fa-file-code"></i> JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div class="pagination-controls">
+                            <div class="pagination-info">
+                                <label for="page-size">Rows per page:</label>
+                                <select id="page-size" class="page-size-select">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
+                            <div class="pagination-buttons">
+                                <button id="first-page" class="pagination-btn" title="First Page">
+                                    <i class="fas fa-angle-double-left"></i>
+                                </button>
+                                <button id="prev-page" class="pagination-btn" title="Previous Page">
+                                    <i class="fas fa-angle-left"></i>
+                                </button>
+                                <span class="page-indicator">
+                                    Page <span id="current-page">1</span> of <span id="total-pages">1</span>
+                                </span>
+                                <button id="next-page" class="pagination-btn" title="Next Page">
+                                    <i class="fas fa-angle-right"></i>
+                                </button>
+                                <button id="last-page" class="pagination-btn" title="Last Page">
+                                    <i class="fas fa-angle-double-right"></i>
+                                </button>
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table class="data-table">
                                 <thead>
@@ -310,13 +492,15 @@ export class EnhancedHTMLGenerator {
                                         <th>Browser</th>
                                         <th>Spec File</th>
                                         <th>Duration</th>
+                                        <th>Retry</th>
                                         <th>Severity</th>
                                         <th>Feature</th>
+                                        <th>Attachments</th>
                                         <th>Error</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${testResults.map(result => `
+                                    ${testResults.map((result, index) => `
                                         <tr>
                                             <td><strong>${result.test}</strong></td>
                                             <td>
@@ -328,8 +512,10 @@ export class EnhancedHTMLGenerator {
                                             <td><i class="fas fa-globe"></i> ${result.browser}</td>
                                             <td><i class="fas fa-file-code"></i> ${result.specFile}</td>
                                             <td><i class="fas fa-clock"></i> ${result.duration}ms</td>
+                                            <td>${result.retry > 0 ? `<span class="retry-badge"><i class="fas fa-redo"></i> ${result.retry}</span>` : '-'}</td>
                                             <td><i class="fas fa-exclamation-triangle"></i> ${result.allureProperties?.severity || 'normal'}</td>
                                             <td><i class="fas fa-tag"></i> ${result.allureProperties?.feature || 'Unknown'}</td>
+                                            <td>${this.generateAttachmentsHTML(result.attachments, index)}</td>
                                             <td style="max-width: 300px; word-wrap: break-word;">${this.escapeHtml(this.sanitizeErrorMessage(result.error))}</td>
                                         </tr>
                                     `).join('')}
@@ -339,7 +525,40 @@ export class EnhancedHTMLGenerator {
                     </div>
                 </div>
             </div>
+        </div>
+        
+        <!-- Lightbox Modal -->
+        <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+            <span class="lightbox-close">&times;</span>
+            <img class="lightbox-content" id="lightbox-img">
+            <video class="lightbox-content" id="lightbox-video" controls style="display:none;"></video>
+            <div class="lightbox-caption" id="lightbox-caption"></div>
+            <div class="lightbox-nav">
+                <button class="lightbox-prev" onclick="event.stopPropagation(); navigateLightbox(-1)">❮</button>
+                <button class="lightbox-next" onclick="event.stopPropagation(); navigateLightbox(1)">❯</button>
+            </div>
         </div>`;
+  }
+
+  private static generateAttachmentsHTML(attachments: any[] | undefined, testIndex: number): string {
+    if (!attachments || attachments.length === 0) {
+      return '<span class="no-attachments">-</span>';
+    }
+    
+    const attachmentIcons = attachments.map((attachment, index) => {
+      const isImage = attachment.contentType.startsWith('image/');
+      const isVideo = attachment.contentType.startsWith('video/');
+      const icon = isImage ? 'fa-image' : isVideo ? 'fa-video' : 'fa-file';
+      const clickHandler = (isImage || isVideo) 
+        ? `onclick="openLightbox('${attachment.path}', '${attachment.name}', ${testIndex}, ${index}, ${isVideo})"` 
+        : `onclick="window.open('${attachment.path}', '_blank')"`;
+      
+      return `<button class="attachment-btn" ${clickHandler} title="${attachment.name}">
+        <i class="fas ${icon}"></i>
+      </button>`;
+    }).join('');
+    
+    return `<div class="attachments-container">${attachmentIcons}</div>`;
   }
 
   private static getCSS(): string {
@@ -491,7 +710,6 @@ export class EnhancedHTMLGenerator {
             color: var(--md-primary);
             transform: translateY(-1px);
         }
-        }
 
         body.darkmode .darkmode-toggle {
             color: #b4bfca;
@@ -581,7 +799,6 @@ export class EnhancedHTMLGenerator {
             .navbar-container {
                 padding: 0 10px;
             }
-        }
             .col-md-6, .col-lg-4, .col-md-12 {
                 padding: 0 10px;
             }
@@ -627,7 +844,6 @@ export class EnhancedHTMLGenerator {
 
         .x_title:hover {
             background: var(--md-surface-variant);
-        }
         }
 
         .x_title h2 {
@@ -684,8 +900,16 @@ export class EnhancedHTMLGenerator {
             padding: 0 20px;
         }
 
+        .fixed_height_320 {
+            min-height: 320px;
+        }
+
         .fixed_height_320 .x_content {
-            min-height: 240px;
+            min-height: 220px;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            padding: 15px 20px;
         }
 
         /* Status Colors */
@@ -702,54 +926,51 @@ export class EnhancedHTMLGenerator {
         /* Chart Styles */
         .chart-container-wrapper {
             display: flex;
-            align-items: flex-start;
-            gap: 30px;
+            align-items: stretch;
+            gap: 20px;
             height: auto;
-            min-height: 220px;
-            padding: 20px 0;
+            min-height: 200px;
+            padding: 10px;
             justify-content: flex-start;
         }
 
         .chart-visual {
             position: relative;
-            width: 150px;
-            height: 150px;
+            width: 140px;
+            height: 140px;
             flex-shrink: 0;
             display: flex;
             justify-content: center;
             align-items: center;
-            margin-top: 10px;
+            align-self: center;
         }
 
         .chart-visual canvas {
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 150px !important;
-            height: 150px !important;
-            z-index: 1 !important;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 140px !important;
+            height: 140px !important;
+            z-index: 1;
         }
 
         .chart-total {
-            position: absolute !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
-            font-size: 2.0em !important;
-            font-weight: bold !important;
-            color: #333 !important;
-            pointer-events: none !important;
-            z-index: 100 !important;
-            display: block !important;
-            text-align: center !important;
-            line-height: 1 !important;
-            font-family: 'Roboto', sans-serif !important;
-            background: rgba(255, 255, 255, 0.1) !important;
-            border-radius: 50% !important;
-            padding: 10px !important;
-            min-width: 60px !important;
-            min-height: 60px !important;
-            box-sizing: border-box !important;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            font-weight: 700;
+            color: #333;
+            pointer-events: none;
+            z-index: 100;
+            text-align: center;
+            line-height: 1;
+            font-family: 'Roboto', 'Arial', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         body.darkmode .chart-total {
@@ -758,24 +979,24 @@ export class EnhancedHTMLGenerator {
 
         .chart-legend {
             flex: 1;
-            min-width: 250px;
+            min-width: 200px;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
-            gap: 8px;
-            padding-top: 5px;
+            justify-content: center;
+            gap: 4px;
+            align-self: center;
         }
 
         .legend-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 14px 16px;
+            padding: 12px 14px;
             border-bottom: 1px solid #efefef;
-            min-height: 48px;
+            min-height: 44px;
             background: #fafafa;
-            border-radius: 4px;
-            margin-bottom: 4px;
+            border-radius: 6px;
+            margin-bottom: 0;
         }
 
         .legend-item:last-child {
@@ -791,25 +1012,25 @@ export class EnhancedHTMLGenerator {
         .legend-label {
             display: flex;
             align-items: center;
-            gap: 12px;
-            font-size: 0.9rem;
+            gap: 10px;
+            font-size: 0.875rem;
             font-weight: 500;
             flex: 1;
         }
 
         .legend-label i {
-            width: 18px;
+            width: 16px;
             text-align: center;
-            font-size: 1rem;
+            font-size: 0.95rem;
             flex-shrink: 0;
         }
 
         .legend-percentage {
-            font-weight: bold;
-            font-size: 0.9rem;
+            font-weight: 700;
+            font-size: 0.875rem;
             white-space: nowrap;
             color: #4a5568;
-            min-width: 50px;
+            min-width: 45px;
             text-align: right;
         }
 
@@ -819,14 +1040,12 @@ export class EnhancedHTMLGenerator {
 
         /* Metrics Grid */
         .metrics-grid {
-            display: grid !important;
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 16px !important;
-            align-items: stretch !important;
-            margin: 20px 0 !important;
-            padding: 0 10px !important;
-            background: #f0f8ff !important; /* Light blue background for testing */
-            border: 2px solid #1976d2 !important; /* Blue border for testing */
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            align-items: stretch;
+            margin: 20px 0;
+            padding: 0 10px;
         }
 
         .metric-card {
@@ -852,8 +1071,8 @@ export class EnhancedHTMLGenerator {
         }
 
         .metric-card.failed { border-left-color: var(--md-error); }
+        .metric-card.flaky { border-left-color: var(--md-warning); }
         .metric-card.duration { border-left-color: var(--md-info); }
-        .metric-card.rate { border-left-color: var(--md-primary); }
 
         body.darkmode .metric-card {
             background: #1c1c21;
@@ -870,8 +1089,8 @@ export class EnhancedHTMLGenerator {
 
         .metric-card.passed .metric-value { color: #1ABB9C; }
         .metric-card.failed .metric-value { color: #E74C3C; }
+        .metric-card.flaky .metric-value { color: #ff9800; }
         .metric-card.duration .metric-value { color: #3498DB; }
-        .metric-card.rate .metric-value { color: #9f7aea; }
 
         .metric-label {
             font-size: 0.9rem;
@@ -896,36 +1115,39 @@ export class EnhancedHTMLGenerator {
         /* Run Info Styles */
         .info-table {
             width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
+            border-collapse: separate;
+            border-spacing: 0 3px;
+            margin: 0;
+        }
+
+        .info-table tr {
+            background: #fafafa;
         }
 
         .info-table td {
-            padding: 15px 12px;
-            border-bottom: 1px solid #efefef;
-            font-size: 0.95rem;
+            padding: 10px 14px;
+            font-size: 0.875rem;
             vertical-align: middle;
             line-height: 1.4;
         }
 
         .info-table td:first-child {
-            font-weight: 600;
-            width: 50%;
+            font-weight: 500;
+            width: 55%;
             color: #4a5568;
+            border-radius: 6px 0 0 6px;
         }
 
         .info-table td:last-child {
             color: #2d3748;
             text-align: right;
-            font-weight: 500;
+            font-weight: 600;
+            width: 45%;
+            border-radius: 0 6px 6px 0;
         }
 
-        .info-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        body.darkmode .info-table td {
-            border-bottom-color: #2e2e2e;
+        body.darkmode .info-table tr {
+            background: #2a2a2a;
         }
 
         body.darkmode .info-table td:first-child {
@@ -971,22 +1193,24 @@ export class EnhancedHTMLGenerator {
         }
 
         /* Define specific column widths */
-        .data-table th:nth-child(1) { width: 25%; } /* Test Name */
+        .data-table th:nth-child(1) { width: 16%; } /* Test Name */
         .data-table th:nth-child(2) { width: 8%; }  /* Status */
-        .data-table th:nth-child(3) { width: 10%; } /* Browser */
-        .data-table th:nth-child(4) { width: 15%; } /* Spec File */
-        .data-table th:nth-child(5) { width: 8%; }  /* Duration */
-        .data-table th:nth-child(6) { width: 8%; }  /* Severity */
-        .data-table th:nth-child(7) { width: 10%; } /* Feature */
-        .data-table th:nth-child(8) { width: 16%; } /* Error */
+        .data-table th:nth-child(3) { width: 9%; } /* Browser */
+        .data-table th:nth-child(4) { width: 12%; } /* Spec File */
+        .data-table th:nth-child(5) { width: 7%; }  /* Duration */
+        .data-table th:nth-child(6) { width: 6%; }  /* Retry */
+        .data-table th:nth-child(7) { width: 8%; }  /* Severity */
+        .data-table th:nth-child(8) { width: 10%; } /* Feature */
+        .data-table th:nth-child(9) { width: 10%; } /* Attachments */
+        .data-table th:nth-child(10) { width: 14%; } /* Error */
 
         .data-table td {
-            padding: 15px 12px;
+            padding: 12px 10px;
             border-bottom: 1px solid #E6E9ED;
-            font-size: 0.9rem;
-            vertical-align: middle; /* Changed back to middle for better alignment */
+            font-size: 0.85rem;
+            vertical-align: middle;
             line-height: 1.4;
-            overflow: hidden; /* Prevent content overflow */
+            overflow: hidden;
         }
 
         /* Test name column styling */
@@ -994,6 +1218,7 @@ export class EnhancedHTMLGenerator {
             font-weight: 600;
             word-wrap: break-word;
             word-break: break-word;
+            white-space: normal;
         }
 
         /* Status column styling */
@@ -1019,22 +1244,21 @@ export class EnhancedHTMLGenerator {
         }
 
         /* Error message column styling */
-        .data-table td:last-child {
-            max-width: 250px;
+        .data-table td:nth-child(10) {
             word-wrap: break-word;
             word-break: break-word;
-            white-space: pre-wrap;
+            white-space: normal;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 0.8rem;
-            background: #f8f9fa;
-            color: #dc3545;
-            border-left: 3px solid #dc3545;
-            padding-left: 15px;
-            vertical-align: top; /* Top align for error messages */
+            font-size: 0.75rem;
+            background: rgba(231, 76, 60, 0.05);
+            color: #e74c3c;
+            border-left: 2px solid #e74c3c;
+            padding-left: 12px;
+            vertical-align: top;
         }
 
-        body.darkmode .data-table td:last-child {
-            background: #2a2a2a;
+        body.darkmode .data-table td:nth-child(10) {
+            background: rgba(231, 76, 60, 0.1);
             color: #ff6b6b;
             border-left-color: #ff6b6b;
         }
@@ -1120,6 +1344,463 @@ export class EnhancedHTMLGenerator {
             background: rgba(33, 150, 243, 0.12);
             color: var(--md-info);
             border: 1px solid rgba(33, 150, 243, 0.3);
+        }
+
+        /* Retry Badge */
+        .retry-badge {
+            background: rgba(255, 193, 7, 0.1);
+            color: #ff9800;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+
+        .retry-badge-large {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ff9800;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Filters Section */
+        .filters-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--md-surface-variant);
+            border-radius: 12px;
+            border: 1px solid var(--md-outline-variant);
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 180px;
+            flex: 1;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .filter-input,
+        .filter-select {
+            padding: 10px 14px;
+            border: 1px solid var(--md-outline);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            background: var(--md-surface);
+            color: rgba(0, 0, 0, 0.87);
+            transition: all 0.2s ease;
+        }
+
+        .filter-input:focus,
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--md-primary);
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+
+        .clear-filters-btn {
+            padding: 10px 20px;
+            background: var(--md-error);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .clear-filters-btn:hover {
+            background: #d32f2f;
+            transform: translateY(-1px);
+            box-shadow: var(--md-shadow-elevation-2);
+        }
+
+        .results-summary {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            background: var(--md-primary);
+            color: white;
+            border-radius: 8px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .results-summary span {
+            font-weight: 700;
+            font-size: 1.1em;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .export-btn {
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .export-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .export-btn i {
+            font-size: 1rem;
+        }
+
+        /* Pagination Controls */
+        .pagination-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px 20px;
+            background: var(--md-surface-variant);
+            border-radius: 8px;
+            border: 1px solid var(--md-outline-variant);
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .pagination-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pagination-info label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.7);
+        }
+
+        .page-size-select {
+            padding: 8px 12px;
+            border: 1px solid var(--md-outline);
+            border-radius: 6px;
+            background: var(--md-surface);
+            color: rgba(0, 0, 0, 0.87);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .page-size-select:focus {
+            outline: none;
+            border-color: var(--md-primary);
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+
+        .pagination-buttons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pagination-btn {
+            padding: 8px 12px;
+            background: var(--md-surface);
+            border: 1px solid var(--md-outline);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: rgba(0, 0, 0, 0.7);
+            font-size: 1rem;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: var(--md-primary);
+            color: white;
+            border-color: var(--md-primary);
+            transform: translateY(-1px);
+            box-shadow: var(--md-shadow-elevation-1);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .page-indicator {
+            padding: 0 10px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.7);
+            white-space: nowrap;
+        }
+
+        .page-indicator span {
+            font-weight: 700;
+            color: var(--md-primary);
+        }
+
+        body.darkmode .pagination-controls {
+            background: var(--md-surface);
+            border-color: var(--md-outline);
+        }
+
+        body.darkmode .pagination-info label,
+        body.darkmode .page-indicator {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        body.darkmode .page-size-select,
+        body.darkmode .pagination-btn {
+            background: var(--md-surface-variant);
+            color: rgba(255, 255, 255, 0.87);
+            border-color: var(--md-outline);
+        }
+
+        body.darkmode .page-indicator span {
+            color: var(--md-primary-light);
+        }
+
+        body.darkmode .filters-container {
+            background: var(--md-surface);
+            border-color: var(--md-outline);
+        }
+
+        body.darkmode .filter-group label {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        body.darkmode .filter-input,
+        body.darkmode .filter-select {
+            background: var(--md-surface-variant);
+            color: rgba(255, 255, 255, 0.87);
+            border-color: var(--md-outline);
+        }
+
+        /* Trends Section */
+        .trend-chart-container {
+            background: var(--md-surface);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--md-outline-variant);
+            box-shadow: var(--md-shadow-elevation-1);
+            height: 100%;
+        }
+
+        .trend-chart-container h3 {
+            margin: 0 0 20px 0;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--md-primary);
+            text-align: center;
+        }
+
+        .trend-chart-container canvas {
+            width: 100% !important;
+            height: 250px !important;
+        }
+
+        body.darkmode .trend-chart-container {
+            background: var(--md-surface-variant);
+            border-color: var(--md-outline);
+        }
+
+        body.darkmode .trend-chart-container h3 {
+            color: var(--md-primary-light);
+        }
+
+        /* Flaky Tests Section */
+        .flaky-warning {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(255, 152, 0, 0.05));
+            border-left: 4px solid #ff9800;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .flaky-warning strong {
+            color: #ff9800;
+        }
+
+        .flaky-table {
+            border: 2px solid rgba(255, 193, 7, 0.3);
+        }
+
+        .flaky-row {
+            background: rgba(255, 193, 7, 0.03);
+        }
+
+        .flaky-row:hover {
+            background: rgba(255, 193, 7, 0.08) !important;
+        }
+
+        body.darkmode .flaky-warning {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.08));
+            border-left-color: #ffb74d;
+        }
+
+        body.darkmode .flaky-warning strong {
+            color: #ffb74d;
+        }
+
+        /* Attachments */
+        .attachments-container {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .attachment-btn {
+            background: var(--md-primary);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+        }
+
+        .attachment-btn:hover {
+            background: var(--md-primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--md-shadow-elevation-2);
+        }
+
+        .no-attachments {
+            color: #999;
+            font-style: italic;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.95);
+            overflow: auto;
+            animation: lightboxFadeIn 0.3s;
+        }
+
+        .lightbox.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes lightboxFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .lightbox-content {
+            max-width: 90%;
+            max-height: 90%;
+            margin: auto;
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 30px;
+            right: 45px;
+            color: #fff;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            z-index: 10001;
+        }
+
+        .lightbox-close:hover,
+        .lightbox-close:focus {
+            color: #ff4444;
+        }
+
+        .lightbox-caption {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            text-align: center;
+            padding: 12px 24px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            font-size: 16px;
+            max-width: 80%;
+        }
+
+        .lightbox-nav {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        .lightbox-prev,
+        .lightbox-next {
+            pointer-events: all;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 16px 20px;
+            cursor: pointer;
+            font-size: 24px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .lightbox-prev:hover,
+        .lightbox-next:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.1);
         }
 
         /* Smooth Scrolling */
@@ -1262,7 +1943,7 @@ export class EnhancedHTMLGenerator {
     `;
   }
 
-  private static getJavaScript(metrics: TestMetrics, includeCharts: boolean): string {
+  private static getJavaScript(metrics: TestMetrics, includeCharts: boolean, trendsData: any[]): string {
     return `
         // Dark Mode Toggle
         function toggleDarkMode() {
@@ -1310,7 +1991,296 @@ export class EnhancedHTMLGenerator {
             });
         });
 
+        // Lightbox functionality
+        let currentLightboxData = [];
+        let currentLightboxIndex = 0;
+
+        function openLightbox(path, name, testIndex, attachmentIndex, isVideo) {
+            const lightbox = document.getElementById('lightbox');
+            const img = document.getElementById('lightbox-img');
+            const video = document.getElementById('lightbox-video');
+            const caption = document.getElementById('lightbox-caption');
+            
+            if (isVideo) {
+                img.style.display = 'none';
+                video.style.display = 'block';
+                video.src = path;
+            } else {
+                video.style.display = 'none';
+                img.style.display = 'block';
+                img.src = path;
+            }
+            
+            caption.innerHTML = name;
+            lightbox.classList.add('active');
+            
+            // Store current data for navigation
+            currentLightboxIndex = attachmentIndex;
+            // You can enhance this to collect all attachments from the test
+        }
+
+        function closeLightbox() {
+            const lightbox = document.getElementById('lightbox');
+            const video = document.getElementById('lightbox-video');
+            lightbox.classList.remove('active');
+            video.pause();
+            video.src = '';
+        }
+
+        function navigateLightbox(direction) {
+            // Placeholder for navigation between attachments
+            // Can be enhanced to navigate through all attachments
+            console.log('Navigate:', direction);
+        }
+
+        // Close lightbox on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeLightbox();
+            }
+        });
+
+        // Filtering and Pagination functionality
+        function initializeFilters() {
+            const table = document.querySelector('.data-table tbody');
+            if (!table) return;
+            
+            const rows = Array.from(table.querySelectorAll('tr'));
+            const totalCount = rows.length;
+            
+            // Pagination state
+            let currentPage = 1;
+            let pageSize = 25;
+            let filteredRows = [...rows];
+            
+            // Populate dynamic filters
+            const browsers = new Set();
+            const features = new Set();
+            
+            rows.forEach(row => {
+                const browserCell = row.cells[2]?.textContent.trim().replace(/^.*\\s/, '');
+                const featureCell = row.cells[7]?.textContent.trim().replace(/^.*\\s/, '');
+                if (browserCell) browsers.add(browserCell);
+                if (featureCell) features.add(featureCell);
+            });
+            
+            const browserFilter = document.getElementById('browser-filter');
+            const featureFilter = document.getElementById('feature-filter');
+            
+            browsers.forEach(browser => {
+                const option = document.createElement('option');
+                option.value = browser;
+                option.textContent = browser;
+                browserFilter.appendChild(option);
+            });
+            
+            features.forEach(feature => {
+                const option = document.createElement('option');
+                option.value = feature;
+                option.textContent = feature;
+                featureFilter.appendChild(option);
+            });
+            
+            // Update count
+            document.getElementById('total-count').textContent = totalCount;
+            document.getElementById('visible-count').textContent = totalCount;
+            
+            // Filter and pagination function
+            function applyFilters() {
+                const searchValue = document.getElementById('search-input').value.toLowerCase();
+                const statusValue = document.getElementById('status-filter').value.toLowerCase();
+                const browserValue = document.getElementById('browser-filter').value;
+                const severityValue = document.getElementById('severity-filter').value.toLowerCase();
+                const featureValue = document.getElementById('feature-filter').value;
+                
+                // First, filter rows
+                filteredRows = rows.filter(row => {
+                    const testName = row.cells[0]?.textContent.toLowerCase() || '';
+                    const status = row.cells[1]?.textContent.toLowerCase() || '';
+                    const browser = row.cells[2]?.textContent || '';
+                    const severity = row.cells[6]?.textContent.toLowerCase() || '';
+                    const feature = row.cells[7]?.textContent || '';
+                    
+                    const matchesSearch = testName.includes(searchValue);
+                    const matchesStatus = !statusValue || status.includes(statusValue);
+                    const matchesBrowser = !browserValue || browser.includes(browserValue);
+                    const matchesSeverity = !severityValue || severity.includes(severityValue);
+                    const matchesFeature = !featureValue || feature.includes(featureValue);
+                    
+                    return matchesSearch && matchesStatus && matchesBrowser && matchesSeverity && matchesFeature;
+                });
+                
+                // Reset to first page when filters change
+                currentPage = 1;
+                
+                // Update count
+                document.getElementById('visible-count').textContent = filteredRows.length;
+                
+                // Apply pagination
+                applyPagination();
+            }
+            
+            function applyPagination() {
+                const pageSizeValue = document.getElementById('page-size').value;
+                pageSize = pageSizeValue === 'all' ? filteredRows.length : parseInt(pageSizeValue);
+                
+                const totalPages = Math.ceil(filteredRows.length / pageSize);
+                const startIndex = (currentPage - 1) * pageSize;
+                const endIndex = startIndex + pageSize;
+                
+                // Hide all rows first
+                rows.forEach(row => row.style.display = 'none');
+                
+                // Show only rows for current page
+                filteredRows.slice(startIndex, endIndex).forEach(row => {
+                    row.style.display = '';
+                });
+                
+                // Update pagination UI
+                document.getElementById('current-page').textContent = currentPage;
+                document.getElementById('total-pages').textContent = Math.max(1, totalPages);
+                
+                // Enable/disable buttons
+                document.getElementById('first-page').disabled = currentPage === 1;
+                document.getElementById('prev-page').disabled = currentPage === 1;
+                document.getElementById('next-page').disabled = currentPage >= totalPages;
+                document.getElementById('last-page').disabled = currentPage >= totalPages;
+            }
+            
+            // Attach event listeners for filters
+            document.getElementById('search-input').addEventListener('input', applyFilters);
+            document.getElementById('status-filter').addEventListener('change', applyFilters);
+            document.getElementById('browser-filter').addEventListener('change', applyFilters);
+            document.getElementById('severity-filter').addEventListener('change', applyFilters);
+            document.getElementById('feature-filter').addEventListener('change', applyFilters);
+            
+            // Attach event listeners for pagination
+            document.getElementById('page-size').addEventListener('change', function() {
+                currentPage = 1;
+                applyPagination();
+            });
+            
+            document.getElementById('first-page').addEventListener('click', function() {
+                currentPage = 1;
+                applyPagination();
+            });
+            
+            document.getElementById('prev-page').addEventListener('click', function() {
+                if (currentPage > 1) {
+                    currentPage--;
+                    applyPagination();
+                }
+            });
+            
+            document.getElementById('next-page').addEventListener('click', function() {
+                const totalPages = Math.ceil(filteredRows.length / pageSize);
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    applyPagination();
+                }
+            });
+            
+            document.getElementById('last-page').addEventListener('click', function() {
+                currentPage = Math.ceil(filteredRows.length / pageSize);
+                applyPagination();
+            });
+            
+            // Clear filters
+            document.getElementById('clear-filters').addEventListener('click', function() {
+                document.getElementById('search-input').value = '';
+                document.getElementById('status-filter').value = '';
+                document.getElementById('browser-filter').value = '';
+                document.getElementById('severity-filter').value = '';
+                document.getElementById('feature-filter').value = '';
+                applyFilters();
+            });
+            
+            // Export functionality
+            document.getElementById('export-csv').addEventListener('click', function() {
+                exportToCSV(filteredRows);
+            });
+            
+            document.getElementById('export-json').addEventListener('click', function() {
+                exportToJSON(filteredRows);
+            });
+            
+            // Initialize pagination
+            applyPagination();
+        }
+        
+        // Export to CSV
+        function exportToCSV(rows) {
+            const headers = ['Test Name', 'Status', 'Browser', 'Spec File', 'Duration (ms)', 'Retry', 'Severity', 'Feature', 'Error'];
+            const csvRows = [headers.join(',')];
+            
+            rows.forEach(row => {
+                const cells = Array.from(row.cells);
+                const rowData = [
+                    escapeCsvCell(cells[0]?.textContent || ''),
+                    escapeCsvCell(cells[1]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[2]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[3]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[4]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[5]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[6]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[7]?.textContent.trim() || ''),
+                    escapeCsvCell(cells[9]?.textContent.trim() || '')
+                ];
+                csvRows.push(rowData.join(','));
+            });
+            
+            const csvContent = csvRows.join('\\n');
+            downloadFile(csvContent, 'test-results.csv', 'text/csv');
+        }
+        
+        // Export to JSON
+        function exportToJSON(rows) {
+            const results = [];
+            
+            rows.forEach(row => {
+                const cells = Array.from(row.cells);
+                results.push({
+                    testName: cells[0]?.textContent || '',
+                    status: cells[1]?.textContent.trim() || '',
+                    browser: cells[2]?.textContent.trim() || '',
+                    specFile: cells[3]?.textContent.trim() || '',
+                    duration: cells[4]?.textContent.trim() || '',
+                    retry: cells[5]?.textContent.trim() || '',
+                    severity: cells[6]?.textContent.trim() || '',
+                    feature: cells[7]?.textContent.trim() || '',
+                    error: cells[9]?.textContent.trim() || ''
+                });
+            });
+            
+            const jsonContent = JSON.stringify(results, null, 2);
+            downloadFile(jsonContent, 'test-results.json', 'application/json');
+        }
+        
+        // Helper functions
+        function escapeCsvCell(cell) {
+            if (cell.includes(',') || cell.includes('"') || cell.includes('\\n')) {
+                return '"' + cell.replace(/"/g, '""') + '"';
+            }
+            return cell;
+        }
+        
+        function downloadFile(content, filename, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Initialize filters on load
+        document.addEventListener('DOMContentLoaded', initializeFilters);
+
         ${includeCharts ? this.getChartsScript(metrics) : ''}
+        ${trendsData.length > 0 ? this.getTrendsChartsScript(trendsData) : ''}
     `;
   }
 
@@ -1393,6 +2363,206 @@ export class EnhancedHTMLGenerator {
                     }
                 }
             });
+        });
+    `;
+  }
+
+  private static getTrendsChartsScript(trendsData: any[]): string {
+    // Format timestamps for labels
+    const labels = trendsData.map(t => {
+      const date = new Date(t.timestamp);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+    
+    const passRates = trendsData.map(t => t.passRate.toFixed(1));
+    const totalTests = trendsData.map(t => t.totalTests);
+    const passed = trendsData.map(t => t.passed);
+    const failed = trendsData.map(t => t.failed);
+    const durations = trendsData.map(t => (t.duration / 1000).toFixed(2));
+
+    return `
+        // Trends Charts
+        document.addEventListener('DOMContentLoaded', function() {
+            // Pass Rate Trend Chart
+            const passRateTrendCtx = document.getElementById('pass-rate-trend-chart');
+            if (passRateTrendCtx) {
+                new Chart(passRateTrendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ${JSON.stringify(labels)},
+                        datasets: [{
+                            label: 'Pass Rate (%)',
+                            data: ${JSON.stringify(passRates)},
+                            borderColor: '#1ABB9C',
+                            backgroundColor: 'rgba(26, 187, 156, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#1ABB9C',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) { return value + '%'; }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Pass Rate: ' + context.parsed.y + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Test Count Trend Chart
+            const testCountTrendCtx = document.getElementById('test-count-trend-chart');
+            if (testCountTrendCtx) {
+                new Chart(testCountTrendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ${JSON.stringify(labels)},
+                        datasets: [{
+                            label: 'Total Tests',
+                            data: ${JSON.stringify(totalTests)},
+                            borderColor: '#3498DB',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#3498DB',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+
+            // Duration Trend Chart
+            const durationTrendCtx = document.getElementById('duration-trend-chart');
+            if (durationTrendCtx) {
+                new Chart(durationTrendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ${JSON.stringify(labels)},
+                        datasets: [{
+                            label: 'Duration (s)',
+                            data: ${JSON.stringify(durations)},
+                            borderColor: '#9b59b6',
+                            backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#9b59b6',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { 
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) { return value + 's'; }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Duration: ' + context.parsed.y + 's';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Pass/Fail Trend Chart
+            const passFailTrendCtx = document.getElementById('pass-fail-trend-chart');
+            if (passFailTrendCtx) {
+                new Chart(passFailTrendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ${JSON.stringify(labels)},
+                        datasets: [
+                            {
+                                label: 'Passed',
+                                data: ${JSON.stringify(passed)},
+                                borderColor: '#1ABB9C',
+                                backgroundColor: 'rgba(26, 187, 156, 0.1)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#1ABB9C'
+                            },
+                            {
+                                label: 'Failed',
+                                data: ${JSON.stringify(failed)},
+                                borderColor: '#E74C3C',
+                                backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 4,
+                                pointBackgroundColor: '#E74C3C'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { 
+                                beginAtZero: true,
+                                stacked: false
+                            }
+                        },
+                        plugins: {
+                            legend: { 
+                                display: true,
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
         });
     `;
   }
